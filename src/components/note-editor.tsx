@@ -35,7 +35,7 @@ export default function NoteEditor({ note, theme = "light", onChange }: Props) {
         hideModeSwitch: true,
         theme: theme === "dark" ? "dark" : "light",
         initialValue: contentRef.current,
-        placeholder: "Mulai menulis...",
+        placeholder: "Start writing...",
         events: {
           change: () => {
             contentRef.current = instance.getMarkdown();
