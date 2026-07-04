@@ -4,10 +4,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "LemaNotes",
   description:
-    "LemaNotes — catatan markdown dengan notebook, sub-notebook, dan backup ke Google Drive.",
+    "LemaNotes — markdown notes with notebooks, sub-notebooks, and Google Drive backup.",
+  manifest: "/manifest.json",
 };
 
-// Set tema sebelum paint untuk mencegah flash (FOUC).
+// Set theme before paint to prevent a flash (FOUC).
 const themeScript = `
 try {
   var t = localStorage.theme;

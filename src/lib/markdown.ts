@@ -1,5 +1,5 @@
-// Serialisasi/parsing markdown dengan frontmatter YAML sederhana.
-// Kompatibel dibuka di Joplin / Obsidian.
+// Serialize/parse markdown with a simple YAML frontmatter.
+// Compatible when opened in Joplin / Obsidian.
 import type { Note } from "./types";
 
 export type ParsedMarkdown = {
@@ -10,7 +10,7 @@ export type ParsedMarkdown = {
   body: string;
 };
 
-// Ubah note -> string .md dengan frontmatter.
+// Convert a note -> .md string with frontmatter.
 export function noteToMarkdown(note: Pick<
   Note,
   "title" | "tags" | "content_markdown" | "created_at" | "updated_at"
@@ -26,7 +26,7 @@ export function noteToMarkdown(note: Pick<
   return fm.join("\n") + (note.content_markdown ?? "");
 }
 
-// Parse string .md -> objek. Toleran bila tidak ada frontmatter.
+// Parse a .md string -> object. Tolerant when there's no frontmatter.
 export function markdownToNote(raw: string, fallbackTitle = "Untitled"): ParsedMarkdown {
   const fmMatch = raw.match(/^---\s*\n([\s\S]*?)\n---\s*\n?/);
   if (!fmMatch) {
@@ -61,7 +61,7 @@ export function markdownToNote(raw: string, fallbackTitle = "Untitled"): ParsedM
   };
 }
 
-// Nama file aman untuk sistem file / Google Drive.
+// Filesystem/Google-Drive-safe file name.
 export function safeFileName(title: string): string {
   return (
     title

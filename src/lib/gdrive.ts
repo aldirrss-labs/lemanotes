@@ -1,5 +1,5 @@
-// Helper Google Drive API dengan scope non-sensitive `drive.file`.
-// App hanya bisa mengakses file/folder yang IA sendiri buat — cukup untuk backup.
+// Google Drive API helpers using the non-sensitive `drive.file` scope.
+// The app can only access files/folders it created itself — enough for backup.
 // Docs: https://developers.google.com/workspace/drive/api
 
 const OAUTH = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -11,26 +11,26 @@ const SCOPE = "https://www.googleapis.com/auth/drive.file";
 
 export type GoogleTokens = {
   access_token: string;
-  refresh_token?: string; // hanya muncul saat consent pertama
-  expires_in: number; // detik
+  refresh_token?: string; // only present on first consent
+  expires_in: number; // seconds
 };
 
-// URL untuk mengarahkan user ke consent screen Google.
+// URL to redirect the user to Google's consent screen.
 export function buildAuthorizeUrl(state: string): string {
   const p = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID ?? "",
     redirect_uri: process.env.GOOGLE_REDIRECT_URI ?? "",
     response_type: "code",
     scope: SCOPE,
-    access_type: "offline", // agar dapat refresh_token
-    prompt: "consent", // paksa refresh_token muncul tiap connect
+    access_type: "offline", // so we get a refresh_token
+    prompt: "consent", // force refresh_token to appear on every connect
     include_granted_scopes: "true",
     state,
   });
   return `${OAUTH}?${p.toString()}`;
 }
 
-// Tukar authorization code -> tokens.
+// Exchange an authorization code -> tokens.
 export async function exchangeCodeForTokens(code: string): Promise<GoogleTokens> {
   const body = new URLSearchParams({
     code,
@@ -45,13 +45,13 @@ export async function exchangeCodeForTokens(code: string): Promise<GoogleTokens>
     body,
   });
   if (!res.ok) {
-    throw new Error(`Google token exchange gagal: ${res.status} ${await res.text()}`);
+    throw new Error(`Google token exchange failed: ${res.status} ${await res.text()}`);
   }
   return (await res.json()) as GoogleTokens;
 }
 
-// Refresh access token. Google TIDAK mengembalikan refresh_token baru,
-// jadi refresh_token lama tetap dipakai.
+// Refresh the access token. Google does NOT return a new refresh_token,
+// so the old refresh_token keeps being used.
 export async function refreshTokens(refreshToken: string): Promise<GoogleTokens> {
   const body = new URLSearchParams({
     refresh_token: refreshToken,
@@ -65,12 +65,12 @@ export async function refreshTokens(refreshToken: string): Promise<GoogleTokens>
     body,
   });
   if (!res.ok) {
-    throw new Error(`Google token refresh gagal: ${res.status} ${await res.text()}`);
+    throw new Error(`Google token refresh failed: ${res.status} ${await res.text()}`);
   }
   return (await res.json()) as GoogleTokens;
 }
 
-// Cari folder berdasarkan nama di bawah parent; buat bila belum ada.
+// Find a folder by name under a parent; create it if it doesn't exist.
 export async function ensureFolder(
   accessToken: string,
   name: string,
@@ -98,12 +98,12 @@ export async function ensureFolder(
     body: JSON.stringify(meta),
   });
   const created = await createRes.json();
-  if (!created.id) throw new Error(`Gagal buat folder: ${JSON.stringify(created)}`);
+  if (!created.id) throw new Error(`Failed to create folder: ${JSON.stringify(created)}`);
   return created.id as string;
 }
 
-// Buat/perbarui file .md. Mengembalikan fileId.
-// Bila existingFileId basi (404), otomatis membuat file baru.
+// Create/update a .md file. Returns the fileId.
+// If existingFileId is stale (404), a new file is created automatically.
 export async function uploadMarkdown(
   accessToken: string,
   opts: {
@@ -142,7 +142,7 @@ export async function uploadMarkdown(
       return uploadMarkdown(accessToken, { ...opts, existingFileId: null });
     }
     const json = await res.json();
-    if (!json.id) throw new Error(`Update file gagal: ${JSON.stringify(json)}`);
+    if (!json.id) throw new Error(`Failed to update file: ${JSON.stringify(json)}`);
     return json.id as string;
   }
 
@@ -152,11 +152,11 @@ export async function uploadMarkdown(
     body,
   });
   const json = await res.json();
-  if (!json.id) throw new Error(`Create file gagal: ${JSON.stringify(json)}`);
+  if (!json.id) throw new Error(`Failed to create file: ${JSON.stringify(json)}`);
   return json.id as string;
 }
 
-// Escape tanda kutip untuk query Drive.
+// Escape quotes for a Drive query.
 function escapeQuery(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }

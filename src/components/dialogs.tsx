@@ -25,8 +25,8 @@ type DialogState =
   | ({ kind: "alert" } & AlertOpts)
   | null;
 
-// Hook yang menyediakan askConfirm / askPrompt / showAlert (semua Promise-based)
-// plus <DialogHost /> yang harus dirender sekali di komponen.
+// Hook that provides askConfirm / askPrompt / showAlert (all Promise-based)
+// plus <DialogHost />, which must be rendered once in the component.
 export function useDialogs() {
   const [state, setState] = useState<DialogState>(null);
   const [value, setValue] = useState("");
@@ -62,7 +62,7 @@ export function useDialogs() {
     r?.(result);
   }, []);
 
-  // Fokus & select input saat prompt terbuka.
+  // Focus & select the input when the prompt opens.
   useEffect(() => {
     if (state?.kind === "prompt") {
       const t = setTimeout(() => {
@@ -82,7 +82,7 @@ export function useDialogs() {
         }
       }}
       onMouseDown={(e) => {
-        // klik backdrop = batal (kecuali alert yang butuh acknowledge)
+        // clicking the backdrop = cancel (except for alerts, which need acknowledgment)
         if (e.target === e.currentTarget && state.kind !== "alert") {
           finish(state.kind === "confirm" ? false : null);
         }

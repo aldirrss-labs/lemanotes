@@ -14,11 +14,11 @@ export async function GET() {
 
   if (!process.env.GOOGLE_CLIENT_ID) {
     return new NextResponse(
-      "GOOGLE_CLIENT_ID belum diisi. Lengkapi kredensial Google OAuth dulu di .env.",
+      "GOOGLE_CLIENT_ID is not set. Configure Google OAuth credentials in .env first.",
       { status: 501 }
     );
   }
 
-  // state = user id (idealnya ditandatangani/HMAC untuk produksi).
+  // state = user id (ideally signed/HMAC-ed for production).
   return NextResponse.redirect(buildAuthorizeUrl(user.id));
 }

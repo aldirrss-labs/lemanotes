@@ -1,4 +1,4 @@
-// Supabase client untuk Server Components, Route Handlers, Server Actions.
+// Supabase client for Server Components, Route Handlers, Server Actions.
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
@@ -20,7 +20,7 @@ export async function createClient() {
               cookieStore.set(name, value, options)
             );
           } catch {
-            // dipanggil dari Server Component — bisa diabaikan bila ada middleware.
+            // called from a Server Component — can be ignored if middleware handles it.
           }
         },
       },
@@ -28,7 +28,7 @@ export async function createClient() {
   );
 }
 
-// Client service-role (bypass RLS) — HANYA untuk server (cron, operasi token).
+// Service-role client (bypasses RLS) — SERVER-ONLY (cron, token operations).
 import { createClient as createSbClient } from "@supabase/supabase-js";
 export function createServiceClient() {
   return createSbClient(

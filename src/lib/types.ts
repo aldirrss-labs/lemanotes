@@ -23,7 +23,7 @@ export type Note = {
   gdrive_file_id: string | null;
 };
 
-// Notebook dengan anak-anaknya, untuk render tree.
+// Notebook with its children, for rendering the tree.
 export type NotebookNode = Notebook & { children: NotebookNode[] };
 
 export type SyncLog = {

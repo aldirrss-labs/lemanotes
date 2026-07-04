@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   FileText,
@@ -19,6 +19,10 @@ import {
   Moon,
   RotateCcw,
   X,
+  ChevronLeft,
+  ChevronsLeft,
+  ChevronsRight,
+  Menu,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { Note, Notebook, NotebookNode, SyncLog } from "@/lib/types";
@@ -35,6 +39,28 @@ type Props = {
 };
 
 type View = "notes" | "trash";
+type Viewport = "mobile" | "tablet" | "desktop";
+type MobileScreen = "sidebar" | "list" | "editor";
+
+// Detect screen size: mobile (<768px), tablet (768-1023px), desktop (>=1024px).
+function useViewport(): Viewport {
+  const [vp, setVp] = useState<Viewport>("desktop");
+  useEffect(() => {
+    const mdQuery = window.matchMedia("(min-width: 768px)");
+    const lgQuery = window.matchMedia("(min-width: 1024px)");
+    const update = () => {
+      setVp(lgQuery.matches ? "desktop" : mdQuery.matches ? "tablet" : "mobile");
+    };
+    update();
+    mdQuery.addEventListener("change", update);
+    lgQuery.addEventListener("change", update);
+    return () => {
+      mdQuery.removeEventListener("change", update);
+      lgQuery.removeEventListener("change", update);
+    };
+  }, []);
+  return vp;
+}
 
 export default function Workspace({
   initialNotebooks,
@@ -55,7 +81,7 @@ export default function Workspace({
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
 
-  // Fitur baru
+  // New features
   const [search, setSearch] = useState("");
   const [view, setView] = useState<View>("notes");
   const [trashedNotes, setTrashedNotes] = useState<Note[]>([]);
@@ -68,7 +94,29 @@ export default function Workspace({
       : "light"
   );
 
-  // ---- tree dari daftar flat ----
+  // Responsive layout
+  const viewport = useViewport();
+  const [mobileScreen, setMobileScreen] = useState<MobileScreen>("sidebar");
+  const [sidebarOpen, setSidebarOpen] = useState(false); // drawer overlay (tablet)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("sidebarCollapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  function toggleSidebarCollapsed() {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("sidebarCollapsed", next ? "1" : "0");
+      } catch {}
+      return next;
+    });
+  }
+
+  // ---- tree built from the flat list ----
   const tree = useMemo<NotebookNode[]>(() => buildTree(notebooks), [notebooks]);
 
   const noteCounts = useMemo(() => {
@@ -191,6 +239,7 @@ export default function Workspace({
     if (!error && data) {
       setNotes((prev) => [data as Note, ...prev]);
       setSelectedNoteId((data as Note).id);
+      setMobileScreen("editor");
     }
   }
 
@@ -221,6 +270,8 @@ export default function Workspace({
   async function openTrash() {
     setView("trash");
     setSelectedNoteId(null);
+    setMobileScreen("list");
+    setSidebarOpen(false);
     const { data } = await supabase
       .from("notes")
       .select("*")
@@ -357,51 +408,135 @@ export default function Workspace({
   function selectNotebook(id: string | null) {
     setView("notes");
     setSelectedNotebookId(id);
+    setMobileScreen("list");
+    setSidebarOpen(false);
+  }
+
+  function selectNote(id: string) {
+    setSelectedNoteId(id);
+    setMobileScreen("editor");
   }
 
   // =========================================================
   //  Render
   // =========================================================
-  return (
-    <>
-      <div className="flex h-screen overflow-hidden">
-        {/* Sidebar */}
-        <aside className="flex w-64 shrink-0 flex-col bg-sidebar text-gray-200">
-          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-            <span className="text-lg font-semibold tracking-tight text-white">
-              Lema<span className="text-blue-400">Notes</span>
-            </span>
-            <button
-              onClick={toggleTheme}
-              title="Toggle theme"
-              className="text-gray-400 hover:text-white"
-            >
-              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-          </div>
-          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-            <span className="truncate text-sm font-medium">{displayName}</span>
-            <button
-              onClick={logout}
-              title="Sign out"
-              className="text-gray-400 hover:text-white"
-            >
-              <LogOut size={16} />
-            </button>
-          </div>
+  const isDesktop = viewport === "desktop";
+  const isTablet = viewport === "tablet";
+  const isMobile = viewport === "mobile";
+  const collapsed = isDesktop && sidebarCollapsed;
 
-          <div className="flex items-center justify-between px-3 py-2 text-xs uppercase tracking-wide text-gray-400">
-            <span>Notebooks</span>
+  const sidebarNode = (
+    <aside
+      className={
+        isDesktop
+          ? `flex ${collapsed ? "w-14" : "w-64"} shrink-0 flex-col bg-sidebar text-gray-200 transition-[width] duration-150`
+          : isTablet
+            ? `fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-sidebar text-gray-200 shadow-xl transition-transform duration-200 ${
+                sidebarOpen ? "translate-x-0" : "-translate-x-full"
+              }`
+            : "flex h-full w-full flex-col bg-sidebar text-gray-200"
+      }
+    >
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+        {!collapsed && (
+          <span className="text-lg font-semibold tracking-tight text-white">
+            Lema<span className="text-blue-400">Notes</span>
+          </span>
+        )}
+        <div className={`flex items-center gap-2 ${collapsed ? "mx-auto" : ""}`}>
+          <button
+            onClick={toggleTheme}
+            title="Toggle theme"
+            className="text-gray-400 hover:text-white"
+          >
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+          {isDesktop && (
+            <button
+              onClick={toggleSidebarCollapsed}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className="text-gray-400 hover:text-white"
+            >
+              {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+            </button>
+          )}
+          {isTablet && (
+            <button
+              onClick={() => setSidebarOpen(false)}
+              title="Close"
+              className="text-gray-400 hover:text-white"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {!collapsed && (
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <span className="truncate text-sm font-medium">{displayName}</span>
+          <button
+            onClick={logout}
+            title="Sign out"
+            className="text-gray-400 hover:text-white"
+          >
+            <LogOut size={16} />
+          </button>
+        </div>
+      )}
+
+      {!collapsed && (
+        <div className="flex items-center justify-between px-3 py-2 text-xs uppercase tracking-wide text-gray-400">
+          <span>Notebooks</span>
+          <button
+            onClick={() => addNotebook(null)}
+            title="New notebook"
+            className="hover:text-white"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+      )}
+
+      <div
+        className={
+          collapsed
+            ? "flex-1 space-y-1 overflow-auto px-1.5 py-2"
+            : "flex-1 overflow-auto px-1"
+        }
+      >
+        {collapsed ? (
+          <>
+            <button
+              onClick={() => selectNotebook(null)}
+              title="All notes"
+              className={`flex w-full items-center justify-center rounded-md py-2 ${
+                view === "notes" && selectedNotebookId === null
+                  ? "bg-sidebar-hover"
+                  : "hover:bg-sidebar-hover"
+              }`}
+            >
+              <FileText size={16} />
+            </button>
+            <button
+              onClick={openTrash}
+              title="Trash"
+              className={`flex w-full items-center justify-center rounded-md py-2 ${
+                view === "trash" ? "bg-sidebar-hover" : "hover:bg-sidebar-hover"
+              }`}
+            >
+              <Trash size={16} />
+            </button>
             <button
               onClick={() => addNotebook(null)}
               title="New notebook"
-              className="hover:text-white"
+              className="flex w-full items-center justify-center rounded-md py-2 hover:bg-sidebar-hover"
             >
               <Plus size={16} />
             </button>
-          </div>
-
-          <div className="flex-1 overflow-auto px-1">
+          </>
+        ) : (
+          <>
             <button
               onClick={() => selectNotebook(null)}
               className={`mb-1 flex w-full items-center gap-2 rounded-md px-3 py-1 text-sm ${
@@ -429,10 +564,56 @@ export default function Workspace({
             >
               <Trash size={15} /> Trash
             </button>
-          </div>
+          </>
+        )}
+      </div>
 
-          {/* Utilities */}
-          <div className="space-y-1 border-t border-white/10 p-3 text-sm">
+      {/* Utilities */}
+      <div
+        className={
+          collapsed
+            ? "flex flex-col items-center space-y-1 border-t border-white/10 p-1.5 text-sm"
+            : "space-y-1 border-t border-white/10 p-3 text-sm"
+        }
+      >
+        {collapsed ? (
+          <>
+            <button
+              onClick={gdriveConnected ? undefined : connectGDrive}
+              title={gdriveConnected ? "Google Drive connected" : "Connect Google Drive"}
+              className={`flex w-full items-center justify-center rounded-md py-2 ${
+                gdriveConnected ? "text-green-400" : "hover:bg-sidebar-hover"
+              }`}
+            >
+              {gdriveConnected ? <Cloud size={16} /> : <CloudOff size={16} />}
+            </button>
+            {gdriveConnected && (
+              <button
+                onClick={syncNow}
+                disabled={syncing}
+                title="Sync now"
+                className="flex w-full items-center justify-center rounded-md py-2 hover:bg-sidebar-hover disabled:opacity-60"
+              >
+                <RefreshCw size={16} className={syncing ? "animate-spin" : ""} />
+              </button>
+            )}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              title="Import .md"
+              className="flex w-full items-center justify-center rounded-md py-2 hover:bg-sidebar-hover"
+            >
+              <Upload size={16} />
+            </button>
+            <button
+              onClick={exportAll}
+              title="Export all (.zip)"
+              className="flex w-full items-center justify-center rounded-md py-2 hover:bg-sidebar-hover"
+            >
+              <Download size={16} />
+            </button>
+          </>
+        ) : (
+          <>
             {gdriveConnected ? (
               <>
                 <div className="flex items-center gap-2 text-green-400">
@@ -476,163 +657,263 @@ export default function Workspace({
             >
               <Download size={15} /> Export all (.zip)
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".md,text/markdown"
-              multiple
-              hidden
-              onChange={handleImport}
+          </>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".md,text/markdown"
+          multiple
+          hidden
+          onChange={handleImport}
+        />
+      </div>
+    </aside>
+  );
+
+  const listNode = (
+    <section
+      className={
+        isMobile
+          ? "flex h-full w-full flex-col bg-white dark:bg-gray-900"
+          : "flex w-full shrink-0 flex-col border-r bg-white sm:w-72 dark:border-gray-700 dark:bg-gray-900"
+      }
+    >
+      {view === "notes" ? (
+        <>
+          <div className="border-b px-4 py-3 dark:border-gray-700">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                {isMobile && (
+                  <button
+                    onClick={() => setMobileScreen("sidebar")}
+                    className="shrink-0 text-gray-500 dark:text-gray-400"
+                    aria-label="back"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                )}
+                {isTablet && (
+                  <button
+                    onClick={() => setSidebarOpen(true)}
+                    className="shrink-0 text-gray-500 dark:text-gray-400"
+                    aria-label="menu"
+                  >
+                    <Menu size={18} />
+                  </button>
+                )}
+                <h2 className="truncate text-sm font-semibold text-gray-600 dark:text-gray-300">
+                  {selectedNotebookId
+                    ? notebooks.find((n) => n.id === selectedNotebookId)?.name
+                    : "All notes"}
+                </h2>
+              </div>
+              <button
+                onClick={addNote}
+                title="New note"
+                className="shrink-0 text-blue-600 hover:text-blue-700"
+              >
+                <Plus size={18} />
+              </button>
+            </div>
+            <div className="relative">
+              <Search
+                size={14}
+                className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search notes..."
+                className="w-full rounded-md border bg-gray-50 py-1.5 pl-7 pr-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+              />
+            </div>
+          </div>
+          <div className="flex-1 overflow-auto">
+            {visibleNotes.length === 0 && (
+              <p className="p-4 text-sm text-gray-400">
+                {search ? "No matching notes." : "No notes yet."}
+              </p>
+            )}
+            {visibleNotes.map((n) => (
+              <button
+                key={n.id}
+                onClick={() => selectNote(n.id)}
+                className={`block w-full border-b px-4 py-3 text-left hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800 ${
+                  selectedNoteId === n.id
+                    ? "bg-blue-50 dark:bg-blue-950"
+                    : ""
+                }`}
+              >
+                <div className="truncate font-medium text-gray-900 dark:text-gray-100">
+                  {n.title || "Untitled"}
+                </div>
+                <div className="truncate text-xs text-gray-400">
+                  {new Date(n.updated_at).toLocaleString("en-US")}
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex items-center justify-between border-b px-4 py-3 dark:border-gray-700">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-600 dark:text-gray-300">
+              {isMobile && (
+                <button
+                  onClick={() => setMobileScreen("sidebar")}
+                  className="text-gray-500 dark:text-gray-400"
+                  aria-label="back"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+              )}
+              {isTablet && (
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className="text-gray-500 dark:text-gray-400"
+                  aria-label="menu"
+                >
+                  <Menu size={18} />
+                </button>
+              )}
+              <Trash size={15} /> Trash
+            </h2>
+            {trashedNotes.length > 0 && (
+              <button
+                onClick={emptyTrash}
+                className="text-xs font-medium text-red-600 hover:underline"
+              >
+                Empty trash
+              </button>
+            )}
+          </div>
+          <div className="flex-1 overflow-auto">
+            {trashedNotes.length === 0 && (
+              <p className="p-4 text-sm text-gray-400">Trash is empty.</p>
+            )}
+            {trashedNotes.map((n) => (
+              <div
+                key={n.id}
+                className="border-b px-4 py-3 dark:border-gray-800"
+              >
+                <div className="truncate font-medium text-gray-900 dark:text-gray-100">
+                  {n.title || "Untitled"}
+                </div>
+                <div className="mb-2 truncate text-xs text-gray-400">
+                  Deleted{" "}
+                  {n.deleted_at
+                    ? new Date(n.deleted_at).toLocaleString("en-US")
+                    : ""}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => restoreNote(n.id)}
+                    className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
+                    <RotateCcw size={12} /> Restore
+                  </button>
+                  <button
+                    onClick={() => deleteForever(n.id)}
+                    className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+                  >
+                    <Trash2 size={12} /> Delete forever
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+
+  const editorNode = (
+    <main
+      className={
+        isMobile
+          ? "flex h-full w-full flex-col bg-white dark:bg-gray-900"
+          : "flex-1 overflow-hidden bg-white dark:bg-gray-900"
+      }
+    >
+      {view === "notes" && selectedNote ? (
+        <div className="flex h-full flex-col">
+          <div className="flex items-center justify-between gap-2 border-b px-4 py-2 dark:border-gray-700">
+            {isMobile ? (
+              <button
+                onClick={() => setMobileScreen("list")}
+                className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-300"
+              >
+                <ChevronLeft size={16} /> Back
+              </button>
+            ) : (
+              <span />
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={exportCurrent}
+                className="flex items-center gap-1 rounded-md border px-2 py-1 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <Download size={14} /> .md
+              </button>
+              <button
+                onClick={() => deleteNote(selectedNote.id)}
+                className="flex items-center gap-1 rounded-md border px-2 py-1 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+              >
+                <Trash2 size={14} /> Delete
+              </button>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <NoteEditor
+              note={selectedNote}
+              theme={theme}
+              onChange={(patch) => updateNote(selectedNote.id, patch)}
             />
           </div>
-        </aside>
+        </div>
+      ) : (
+        <div className="flex h-full items-center justify-center p-4 text-center text-gray-400">
+          {view === "trash"
+            ? "Restore or permanently delete notes from the trash."
+            : "Select or create a note to start writing."}
+        </div>
+      )}
+    </main>
+  );
 
-        {/* Middle column */}
-        <section className="flex w-72 shrink-0 flex-col border-r bg-white dark:border-gray-700 dark:bg-gray-900">
-          {view === "notes" ? (
-            <>
-              <div className="border-b px-4 py-3 dark:border-gray-700">
-                <div className="mb-2 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-gray-600 dark:text-gray-300">
-                    {selectedNotebookId
-                      ? notebooks.find((n) => n.id === selectedNotebookId)?.name
-                      : "All notes"}
-                  </h2>
-                  <button
-                    onClick={addNote}
-                    title="New note"
-                    className="text-blue-600 hover:text-blue-700"
-                  >
-                    <Plus size={18} />
-                  </button>
-                </div>
-                <div className="relative">
-                  <Search
-                    size={14}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"
-                  />
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search notes..."
-                    className="w-full rounded-md border bg-gray-50 py-1.5 pl-7 pr-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-                  />
-                </div>
-              </div>
-              <div className="flex-1 overflow-auto">
-                {visibleNotes.length === 0 && (
-                  <p className="p-4 text-sm text-gray-400">
-                    {search ? "No matching notes." : "No notes yet."}
-                  </p>
-                )}
-                {visibleNotes.map((n) => (
-                  <button
-                    key={n.id}
-                    onClick={() => setSelectedNoteId(n.id)}
-                    className={`block w-full border-b px-4 py-3 text-left hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800 ${
-                      selectedNoteId === n.id
-                        ? "bg-blue-50 dark:bg-blue-950"
-                        : ""
-                    }`}
-                  >
-                    <div className="truncate font-medium text-gray-900 dark:text-gray-100">
-                      {n.title || "Untitled"}
-                    </div>
-                    <div className="truncate text-xs text-gray-400">
-                      {new Date(n.updated_at).toLocaleString("en-US")}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center justify-between border-b px-4 py-3 dark:border-gray-700">
-                <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-600 dark:text-gray-300">
-                  <Trash size={15} /> Trash
-                </h2>
-                {trashedNotes.length > 0 && (
-                  <button
-                    onClick={emptyTrash}
-                    className="text-xs font-medium text-red-600 hover:underline"
-                  >
-                    Empty trash
-                  </button>
-                )}
-              </div>
-              <div className="flex-1 overflow-auto">
-                {trashedNotes.length === 0 && (
-                  <p className="p-4 text-sm text-gray-400">Trash is empty.</p>
-                )}
-                {trashedNotes.map((n) => (
-                  <div
-                    key={n.id}
-                    className="border-b px-4 py-3 dark:border-gray-800"
-                  >
-                    <div className="truncate font-medium text-gray-900 dark:text-gray-100">
-                      {n.title || "Untitled"}
-                    </div>
-                    <div className="mb-2 truncate text-xs text-gray-400">
-                      Deleted{" "}
-                      {n.deleted_at
-                        ? new Date(n.deleted_at).toLocaleString("en-US")
-                        : ""}
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => restoreNote(n.id)}
-                        className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
-                      >
-                        <RotateCcw size={12} /> Restore
-                      </button>
-                      <button
-                        onClick={() => deleteForever(n.id)}
-                        className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
-                      >
-                        <Trash2 size={12} /> Delete forever
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </section>
+  return (
+    <>
+      <div className="flex h-screen overflow-hidden">
+        {isDesktop && (
+          <>
+            {sidebarNode}
+            {listNode}
+            {editorNode}
+          </>
+        )}
 
-        {/* Editor */}
-        <main className="flex-1 overflow-hidden bg-white dark:bg-gray-900">
-          {view === "notes" && selectedNote ? (
-            <div className="flex h-full flex-col">
-              <div className="flex justify-end gap-2 border-b px-4 py-2 dark:border-gray-700">
-                <button
-                  onClick={exportCurrent}
-                  className="flex items-center gap-1 rounded-md border px-2 py-1 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  <Download size={14} /> .md
-                </button>
-                <button
-                  onClick={() => deleteNote(selectedNote.id)}
-                  className="flex items-center gap-1 rounded-md border px-2 py-1 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
-                >
-                  <Trash2 size={14} /> Delete
-                </button>
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <NoteEditor
-                  note={selectedNote}
-                  theme={theme}
-                  onChange={(patch) => updateNote(selectedNote.id, patch)}
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="flex h-full items-center justify-center text-gray-400">
-              {view === "trash"
-                ? "Restore or permanently delete notes from the trash."
-                : "Select or create a note to start writing."}
-            </div>
-          )}
-        </main>
+        {isTablet && (
+          <>
+            {sidebarOpen && (
+              <div
+                className="fixed inset-0 z-30 bg-black/40"
+                onClick={() => setSidebarOpen(false)}
+              />
+            )}
+            {sidebarNode}
+            {listNode}
+            {editorNode}
+          </>
+        )}
+
+        {isMobile && (
+          <>
+            {mobileScreen === "sidebar" && sidebarNode}
+            {mobileScreen === "list" && listNode}
+            {mobileScreen === "editor" && editorNode}
+          </>
+        )}
       </div>
 
       {/* Sync history modal */}
@@ -735,7 +1016,7 @@ function collectDescendants(id: string, list: Notebook[]): Set<string> {
   return result;
 }
 
-// Resolusi path folder "A/Sub/" untuk sebuah notebook.
+// Resolve the folder path "A/Sub/" for a notebook.
 function notebookPathResolver(list: Notebook[]) {
   const byId = new Map(list.map((nb) => [nb.id, nb]));
   return (id: string): string => {

@@ -32,7 +32,7 @@ export async function POST() {
     );
   }
 
-  // --- Pastikan access token masih berlaku; refresh bila hampir/ sudah expired.
+  // --- Make sure the access token is still valid; refresh if it's near/already expired.
   let accessToken = decrypt(profile.gdrive_access_token);
   const expiresAt = profile.gdrive_token_expires_at
     ? new Date(profile.gdrive_token_expires_at).getTime()
@@ -68,7 +68,7 @@ export async function POST() {
     }
   }
 
-  // --- Pastikan folder root "LemaNotes" ada.
+  // --- Make sure the "LemaNotes" root folder exists.
   let rootFolderId = profile.gdrive_root_folder_id as string | null;
   if (!rootFolderId) {
     rootFolderId = await ensureFolder(accessToken, ROOT_NAME, null);
@@ -88,7 +88,7 @@ export async function POST() {
   const notebooks = (notebooksData ?? []) as Notebook[];
   const notebookById = new Map(notebooks.map((nb) => [nb.id, nb]));
 
-  // --- Resolver folder Drive untuk sebuah notebook (buat chain bila perlu).
+  // --- Resolve the Drive folder for a notebook (creating the chain if needed).
   const folderCache = new Map<string, string>();
   async function resolveFolder(notebookId: string): Promise<string> {
     const cached = folderCache.get(notebookId);

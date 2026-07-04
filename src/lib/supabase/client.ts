@@ -1,4 +1,4 @@
-// Supabase client untuk komponen client ('use client').
+// Supabase client for client components ('use client').
 import { createBrowserClient } from "@supabase/ssr";
 
 export function createClient() {

@@ -1,11 +1,10 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type Editor from "@toast-ui/editor";
 import type { Note } from "@/lib/types";
-import "@uiw/react-md-editor/markdown-editor.css";
-
-const MDEditor = dynamic(() => import("@uiw/react-md-editor"), { ssr: false });
+import "@toast-ui/editor/dist/toastui-editor.css";
+import "@toast-ui/editor/dist/theme/toastui-editor-dark.css";
 
 type Props = {
   note: Note;
@@ -15,43 +14,93 @@ type Props = {
 
 export default function NoteEditor({ note, theme = "light", onChange }: Props) {
   const [title, setTitle] = useState(note.title);
-  const [content, setContent] = useState(note.content_markdown);
   const [tagsInput, setTagsInput] = useState(note.tags.join(", "));
 
-  // Sinkronkan bila note yang dipilih berganti.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<Editor | null>(null);
+  const contentRef = useRef(note.content_markdown);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Create the editor instance once per mount.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { default: ToastEditor } = await import("@toast-ui/editor");
+      if (cancelled || !containerRef.current) return;
+      const instance = new ToastEditor({
+        el: containerRef.current,
+        height: "100%",
+        initialEditType: "wysiwyg",
+        previewStyle: "tab",
+        hideModeSwitch: true,
+        theme: theme === "dark" ? "dark" : "light",
+        initialValue: contentRef.current,
+        placeholder: "Mulai menulis...",
+        events: {
+          change: () => {
+            contentRef.current = instance.getMarkdown();
+            scheduleSave();
+          },
+        },
+      });
+      editorRef.current = instance;
+    })();
+    return () => {
+      cancelled = true;
+      editorRef.current?.destroy();
+      editorRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Swap content & metadata when the selected note changes.
   useEffect(() => {
     setTitle(note.title);
-    setContent(note.content_markdown);
     setTagsInput(note.tags.join(", "));
+    contentRef.current = note.content_markdown;
+    editorRef.current?.setMarkdown(note.content_markdown, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.id]);
 
-  // Debounce simpan.
-  useEffect(() => {
-    const t = setTimeout(() => {
+  function scheduleSave() {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
       const tags = tagsInput
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
-      const changed =
-        title !== note.title ||
-        content !== note.content_markdown ||
-        tags.join(",") !== note.tags.join(",");
-      if (changed) {
-        onChange({ title, content_markdown: content, tags });
-      }
+      onChange({
+        title,
+        content_markdown: contentRef.current,
+        tags,
+      });
     }, 700);
-    return () => clearTimeout(t);
+  }
+
+  useEffect(() => {
+    scheduleSave();
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, content, tagsInput]);
+  }, [title, tagsInput]);
+
+  // Toast UI Editor has no runtime theme-switch API; toggle the class manually.
+  useEffect(() => {
+    const root = containerRef.current?.querySelector(
+      ".toastui-editor-defaultUI"
+    );
+    root?.classList.toggle("toastui-editor-dark", theme === "dark");
+  }, [theme]);
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b bg-white px-6 py-3 dark:border-gray-700 dark:bg-gray-900">
+      <div className="border-b bg-white px-4 py-3 sm:px-6 dark:border-gray-700 dark:bg-gray-900">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Note title"
-          className="w-full bg-transparent text-2xl font-semibold text-gray-900 outline-none placeholder:text-gray-300 dark:text-gray-100 dark:placeholder:text-gray-600"
+          className="w-full bg-transparent text-xl font-semibold text-gray-900 outline-none placeholder:text-gray-300 sm:text-2xl dark:text-gray-100 dark:placeholder:text-gray-600"
         />
         <input
           value={tagsInput}
@@ -60,14 +109,8 @@ export default function NoteEditor({ note, theme = "light", onChange }: Props) {
           className="mt-1 w-full bg-transparent text-sm text-gray-500 outline-none placeholder:text-gray-300 dark:text-gray-400 dark:placeholder:text-gray-600"
         />
       </div>
-      <div className="flex-1 overflow-auto" data-color-mode={theme}>
-        <MDEditor
-          value={content}
-          onChange={(v) => setContent(v ?? "")}
-          height="100%"
-          visibleDragbar={false}
-          preview="live"
-        />
+      <div className="min-h-0 flex-1 overflow-auto">
+        <div ref={containerRef} className="h-full" />
       </div>
     </div>
   );

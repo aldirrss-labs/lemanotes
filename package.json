@@ -11,7 +11,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
-    "@uiw/react-md-editor": "^4.0.4",
+    "@toast-ui/editor": "^3.2.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.469.0",
     "next": "^15.5.20",

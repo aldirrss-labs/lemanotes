@@ -30,7 +30,7 @@ export default function SignupPage() {
       setError(error.message);
       return;
     }
-    // Bila konfirmasi email dimatikan di Supabase, session langsung aktif.
+    // If email confirmation is disabled in Supabase, the session is active immediately.
     if (data.session) {
       router.push("/workspace");
       router.refresh();

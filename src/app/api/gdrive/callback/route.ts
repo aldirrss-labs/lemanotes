@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
       gdrive_access_token: encrypt(tokens.access_token),
       gdrive_token_expires_at: expiresAt,
     };
-    // refresh_token hanya ada saat consent pertama — jangan timpa dengan kosong.
+    // refresh_token is only present on first consent — don't overwrite it with empty.
     if (tokens.refresh_token) {
       update.gdrive_refresh_token = encrypt(tokens.refresh_token);
     }
