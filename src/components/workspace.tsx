@@ -262,6 +262,11 @@ export default function Workspace({
     if (!ok) return;
     const when = new Date().toISOString();
     await supabase.from("notes").update({ deleted_at: when }).eq("id", id);
+    await fetch("/api/gdrive/untrack-note", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ noteId: id }),
+    });
     const moved = notes.find((n) => n.id === id);
     setNotes((prev) => prev.filter((n) => n.id !== id));
     if (moved) setTrashedNotes((prev) => [{ ...moved, deleted_at: when }, ...prev]);
