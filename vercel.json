@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/refresh-gdrive-tokens",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}
