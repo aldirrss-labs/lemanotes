@@ -206,8 +206,12 @@ export default function Workspace({
       danger: true,
     });
     if (!ok) return;
-    const { error } = await supabase.from("notebooks").delete().eq("id", id);
-    if (!error) {
+    const res = await fetch("/api/gdrive/delete-notebook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notebookId: id }),
+    });
+    if (res.ok) {
       const removed = collectDescendants(id, notebooks);
       setNotebooks((prev) => prev.filter((nb) => !removed.has(nb.id)));
       setNotes((prev) =>
@@ -296,7 +300,11 @@ export default function Workspace({
       danger: true,
     });
     if (!ok) return;
-    await supabase.from("notes").delete().eq("id", id);
+    await fetch("/api/gdrive/delete-notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ noteIds: [id] }),
+    });
     setTrashedNotes((prev) => prev.filter((n) => n.id !== id));
   }
 
@@ -310,7 +318,11 @@ export default function Workspace({
     });
     if (!ok) return;
     const ids = trashedNotes.map((n) => n.id);
-    await supabase.from("notes").delete().in("id", ids);
+    await fetch("/api/gdrive/delete-notes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ noteIds: ids }),
+    });
     setTrashedNotes([]);
   }
 

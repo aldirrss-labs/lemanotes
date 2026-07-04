@@ -156,6 +156,18 @@ export async function uploadMarkdown(
   return json.id as string;
 }
 
+// Delete a file or folder from Drive. Deleting a folder also removes everything
+// inside it. A 404 (already gone) is treated as success.
+export async function deleteFile(accessToken: string, fileId: string): Promise<void> {
+  const res = await fetch(`${DRIVE}/files/${fileId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Failed to delete from Drive: ${res.status} ${await res.text()}`);
+  }
+}
+
 // Escape quotes for a Drive query.
 function escapeQuery(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { decrypt, encrypt } from "@/lib/crypto";
-import { ensureFolder, uploadMarkdown, refreshTokens } from "@/lib/gdrive";
+import { ensureFolder, uploadMarkdown } from "@/lib/gdrive";
+import { getValidAccessToken } from "@/lib/gdrive-token";
 import { noteToMarkdown, safeFileName } from "@/lib/markdown";
 import type { Note, Notebook } from "@/lib/types";
 
@@ -19,54 +19,25 @@ export async function POST() {
 
   const { data: profile } = await service
     .from("profiles")
-    .select(
-      "gdrive_connected, gdrive_access_token, gdrive_refresh_token, gdrive_token_expires_at, gdrive_root_folder_id"
-    )
+    .select("gdrive_connected, gdrive_root_folder_id")
     .eq("id", user.id)
     .single();
 
-  if (!profile?.gdrive_connected || !profile.gdrive_access_token) {
+  if (!profile?.gdrive_connected) {
     return NextResponse.json(
       { message: "Google Drive is not connected." },
       { status: 400 }
     );
   }
 
-  // --- Make sure the access token is still valid; refresh if it's near/already expired.
-  let accessToken = decrypt(profile.gdrive_access_token);
-  const expiresAt = profile.gdrive_token_expires_at
-    ? new Date(profile.gdrive_token_expires_at).getTime()
-    : 0;
-  if (Date.now() > expiresAt - 60_000) {
-    if (!profile.gdrive_refresh_token) {
-      return NextResponse.json(
-        { message: "Session Google Drive expired. Please reconnect." },
-        { status: 400 }
-      );
-    }
-    try {
-      const t = await refreshTokens(decrypt(profile.gdrive_refresh_token));
-      accessToken = t.access_token;
-      await service
-        .from("profiles")
-        .update({
-          gdrive_access_token: encrypt(t.access_token),
-          gdrive_token_expires_at: new Date(
-            Date.now() + t.expires_in * 1000
-          ).toISOString(),
-        })
-        .eq("id", user.id);
-    } catch {
-      await service
-        .from("profiles")
-        .update({ gdrive_connected: false })
-        .eq("id", user.id);
-      return NextResponse.json(
-        { message: "Failed to refresh token. Please reconnect Google Drive." },
-        { status: 400 }
-      );
-    }
+  const validToken = await getValidAccessToken(user.id);
+  if (!validToken) {
+    return NextResponse.json(
+      { message: "Google Drive session expired. Please reconnect." },
+      { status: 400 }
+    );
   }
+  const accessToken: string = validToken;
 
   // --- Make sure the "LemaNotes" root folder exists.
   let rootFolderId = profile.gdrive_root_folder_id as string | null;
