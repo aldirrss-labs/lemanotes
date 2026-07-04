@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   FileText,
@@ -80,6 +80,7 @@ export default function Workspace({
   );
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const syncingRef = useRef(false);
 
   // New features
   const [search, setSearch] = useState("");
@@ -400,21 +401,46 @@ export default function Workspace({
     window.location.href = "/api/gdrive/connect";
   }
 
+  const runSync = useCallback(
+    async (opts: { showResult: boolean }) => {
+      if (syncingRef.current) return;
+      syncingRef.current = true;
+      setSyncing(true);
+      try {
+        const res = await fetch("/api/gdrive/sync", { method: "POST" });
+        const json = await res.json();
+        if (opts.showResult) {
+          await showAlert({ title: "Sync", message: json.message ?? "Done" });
+        }
+      } catch {
+        if (opts.showResult) {
+          await showAlert({
+            title: "Sync failed",
+            message: "Could not reach the sync server.",
+          });
+        }
+      } finally {
+        syncingRef.current = false;
+        setSyncing(false);
+      }
+    },
+    [showAlert]
+  );
+
   async function syncNow() {
-    setSyncing(true);
-    try {
-      const res = await fetch("/api/gdrive/sync", { method: "POST" });
-      const json = await res.json();
-      await showAlert({ title: "Sync", message: json.message ?? "Done" });
-    } catch {
-      await showAlert({
-        title: "Sync failed",
-        message: "Could not reach the sync server.",
-      });
-    } finally {
-      setSyncing(false);
-    }
+    await runSync({ showResult: true });
   }
+
+  // Auto-sync every 5 minutes while Google Drive is connected and this tab is open.
+  useEffect(() => {
+    if (!gdriveConnected) return;
+    const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+    const id = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      runSync({ showResult: false });
+    }, AUTO_SYNC_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [gdriveConnected, runSync]);
 
   async function logout() {
     await supabase.auth.signOut();
