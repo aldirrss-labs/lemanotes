@@ -1,5 +1,6 @@
-// Refresh session di setiap request & lindungi route terproteksi.
+// Refresh the session on every request & protect authenticated routes.
 import { createServerClient } from "@supabase/ssr";
+import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
 type CookieToSet = { name: string; value: string; options?: Record<string, unknown> };
@@ -30,7 +31,15 @@ export async function updateSession(request: NextRequest) {
 
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
+
+  // A flaky/interrupted network request (common right after a mobile device
+  // wakes a backgrounded tab) shouldn't be treated the same as "not logged
+  // in" — only redirect when Supabase actually confirms there's no session.
+  if (error && isAuthRetryableFetchError(error)) {
+    return response;
+  }
 
   const path = request.nextUrl.pathname;
   const isAuthPage = path === "/login" || path === "/signup";
