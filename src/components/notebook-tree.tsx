@@ -6,7 +6,6 @@ import {
   ChevronDown,
   Folder,
   FolderOpen,
-  Plus,
   MoreVertical,
 } from "lucide-react";
 import type { NotebookNode } from "@/lib/types";
