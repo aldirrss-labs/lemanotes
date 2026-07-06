@@ -16,6 +16,7 @@ export type Note = {
   title: string;
   content_markdown: string;
   tags: string[];
+  pinned: boolean;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

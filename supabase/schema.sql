@@ -38,12 +38,15 @@ create table if not exists public.notes (
   title text not null default 'Untitled',
   content_markdown text not null default '',
   tags text[] not null default '{}',
+  pinned boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz,                 -- soft delete
   last_synced_at timestamptz,             -- terakhir backup ke Drive
   gdrive_file_id text                     -- id file .md padanan di Drive
 );
+-- Safe to re-run: adds the column for databases created before `pinned` existed.
+alter table public.notes add column if not exists pinned boolean not null default false;
 create index if not exists idx_notes_user on public.notes(user_id);
 create index if not exists idx_notes_notebook on public.notes(notebook_id);
 create index if not exists idx_notes_updated on public.notes(updated_at);

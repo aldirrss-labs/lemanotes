@@ -23,6 +23,10 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Menu,
+  Pin,
+  PinOff,
+  ArrowUpDown,
+  Settings,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { Note, Notebook, NotebookNode, SyncLog } from "@/lib/types";
@@ -41,6 +45,33 @@ type Props = {
 type View = "notes" | "trash";
 type Viewport = "mobile" | "tablet" | "desktop";
 type MobileScreen = "sidebar" | "list" | "editor";
+type SortBy = "updated_desc" | "created_desc" | "title_asc" | "title_desc";
+
+const SORT_OPTIONS: { value: SortBy; label: string }[] = [
+  { value: "updated_desc", label: "Recently updated" },
+  { value: "created_desc", label: "Recently created" },
+  { value: "title_asc", label: "Title A-Z" },
+  { value: "title_desc", label: "Title Z-A" },
+];
+
+function sortNotes(list: Note[], sortBy: SortBy): Note[] {
+  const sorted = [...list].sort((a, b) => {
+    switch (sortBy) {
+      case "created_desc":
+        return b.created_at.localeCompare(a.created_at);
+      case "title_asc":
+        return a.title.localeCompare(b.title);
+      case "title_desc":
+        return b.title.localeCompare(a.title);
+      case "updated_desc":
+      default:
+        return b.updated_at.localeCompare(a.updated_at);
+    }
+  });
+  // Pinned notes always float to the top, regardless of sort order.
+  sorted.sort((a, b) => Number(b.pinned) - Number(a.pinned));
+  return sorted;
+}
 
 // Detect screen size: mobile (<768px), tablet (768-1023px), desktop (>=1024px).
 function useViewport(): Viewport {
@@ -84,10 +115,15 @@ export default function Workspace({
 
   // New features
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<SortBy>("updated_desc");
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [showPinnedOnly, setShowPinnedOnly] = useState(false);
   const [view, setView] = useState<View>("notes");
   const [trashedNotes, setTrashedNotes] = useState<Note[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
+  const [localDisplayName, setLocalDisplayName] = useState(displayName);
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     typeof document !== "undefined" &&
     document.documentElement.classList.contains("dark")
@@ -133,6 +169,7 @@ export default function Workspace({
       selectedNotebookId === null
         ? notes
         : notes.filter((n) => n.notebook_id === selectedNotebookId);
+    if (showPinnedOnly) list = list.filter((n) => n.pinned);
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -142,8 +179,8 @@ export default function Workspace({
           n.tags.some((t) => t.toLowerCase().includes(q))
       );
     }
-    return list;
-  }, [notes, selectedNotebookId, search]);
+    return sortNotes(list, sortBy);
+  }, [notes, selectedNotebookId, search, sortBy, showPinnedOnly]);
 
   const selectedNote = notes.find((n) => n.id === selectedNoteId) ?? null;
 
@@ -251,6 +288,12 @@ export default function Workspace({
   async function updateNote(id: string, patch: Partial<Note>) {
     setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, ...patch } : n)));
     await supabase.from("notes").update(patch).eq("id", id);
+  }
+
+  async function togglePin(id: string) {
+    const target = notes.find((n) => n.id === id);
+    if (!target) return;
+    await updateNote(id, { pinned: !target.pinned });
   }
 
   async function deleteNote(id: string) {
@@ -431,18 +474,59 @@ export default function Workspace({
     await runSync({ showResult: true });
   }
 
-  // Auto-sync every 5 minutes while Google Drive is connected and this tab is open.
-  useEffect(() => {
-    if (!gdriveConnected) return;
-    const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
-    const id = setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      runSync({ showResult: false });
-    }, AUTO_SYNC_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [gdriveConnected, runSync]);
-
   async function logout() {
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
+
+  async function updateDisplayName(name: string) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ display_name: name })
+      .eq("id", user.id);
+    if (error) {
+      await showAlert({ title: "Update failed", message: error.message });
+      return;
+    }
+    setLocalDisplayName(name);
+    await showAlert({ title: "Saved", message: "Your name has been updated." });
+  }
+
+  async function updatePassword(newPassword: string) {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      await showAlert({ title: "Update failed", message: error.message });
+      return;
+    }
+    await showAlert({
+      title: "Saved",
+      message: "Your password has been updated.",
+    });
+  }
+
+  async function deleteAccount() {
+    const ok = await askConfirm({
+      title: "Delete account",
+      message:
+        "Permanently delete your account and all your notes, notebooks, and Drive backup links? This cannot be undone.",
+      confirmLabel: "Delete account",
+      danger: true,
+    });
+    if (!ok) return;
+    const res = await fetch("/api/account/delete", { method: "POST" });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      await showAlert({
+        title: "Delete failed",
+        message: json.message ?? "Could not delete your account.",
+      });
+      return;
+    }
     await supabase.auth.signOut();
     router.push("/login");
     router.refresh();
@@ -517,14 +601,25 @@ export default function Workspace({
 
       {!collapsed && (
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <span className="truncate text-sm font-medium">{displayName}</span>
-          <button
-            onClick={logout}
-            title="Sign out"
-            className="text-gray-400 hover:text-white"
-          >
-            <LogOut size={16} />
-          </button>
+          <span className="truncate text-sm font-medium">
+            {localDisplayName}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setAccountSettingsOpen(true)}
+              title="Account settings"
+              className="text-gray-400 hover:text-white"
+            >
+              <Settings size={16} />
+            </button>
+            <button
+              onClick={logout}
+              title="Sign out"
+              className="text-gray-400 hover:text-white"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
       )}
 
@@ -759,7 +854,7 @@ export default function Workspace({
                 <Plus size={18} />
               </button>
             </div>
-            <div className="relative">
+            <div className="relative mb-2">
               <Search
                 size={14}
                 className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"
@@ -767,9 +862,57 @@ export default function Workspace({
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search notes..."
+                placeholder="Search notes or tags..."
                 className="w-full rounded-md border bg-gray-50 py-1.5 pl-7 pr-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
               />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowPinnedOnly((prev) => !prev)}
+                className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm ${
+                  showPinnedOnly
+                    ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300"
+                    : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                }`}
+              >
+                <Pin size={13} className={showPinnedOnly ? "fill-current" : ""} />
+                Pinned
+              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setSortMenuOpen((prev) => !prev)}
+                  className="flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                >
+                  <ArrowUpDown size={13} />
+                  Sort
+                </button>
+                {sortMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setSortMenuOpen(false)}
+                    />
+                    <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                      {SORT_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => {
+                            setSortBy(opt.value);
+                            setSortMenuOpen(false);
+                          }}
+                          className={`block w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                            sortBy === opt.value
+                              ? "font-medium text-blue-600 dark:text-blue-400"
+                              : "text-gray-700 dark:text-gray-200"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex-1 overflow-auto">
@@ -779,22 +922,59 @@ export default function Workspace({
               </p>
             )}
             {visibleNotes.map((n) => (
-              <button
+              <div
                 key={n.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => selectNote(n.id)}
-                className={`block w-full border-b px-4 py-3 text-left hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800 ${
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") selectNote(n.id);
+                }}
+                className={`flex w-full items-start gap-2 border-b px-4 py-3 text-left hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800 ${
                   selectedNoteId === n.id
                     ? "bg-blue-50 dark:bg-blue-950"
                     : ""
                 }`}
               >
-                <div className="truncate font-medium text-gray-900 dark:text-gray-100">
-                  {n.title || "Untitled"}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    {n.pinned && (
+                      <Pin
+                        size={12}
+                        className="shrink-0 fill-current text-blue-600 dark:text-blue-400"
+                      />
+                    )}
+                    <div className="truncate font-medium text-gray-900 dark:text-gray-100">
+                      {n.title || "Untitled"}
+                    </div>
+                  </div>
+                  <div className="truncate text-xs text-gray-400">
+                    {new Date(n.updated_at).toLocaleString("en-US")}
+                  </div>
+                  {n.tags.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {n.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="truncate text-xs text-gray-400">
-                  {new Date(n.updated_at).toLocaleString("en-US")}
-                </div>
-              </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    togglePin(n.id);
+                  }}
+                  title={n.pinned ? "Unpin" : "Pin"}
+                  className="shrink-0 text-gray-300 hover:text-blue-600 dark:text-gray-600 dark:hover:text-blue-400"
+                >
+                  {n.pinned ? <PinOff size={14} /> : <Pin size={14} />}
+                </button>
+              </div>
             ))}
           </div>
         </>
@@ -911,7 +1091,7 @@ export default function Workspace({
             <NoteEditor
               note={selectedNote}
               theme={theme}
-              onChange={(patch) => updateNote(selectedNote.id, patch)}
+              onChange={updateNote}
             />
           </div>
         </div>
@@ -1022,8 +1202,169 @@ export default function Workspace({
         </div>
       )}
 
+      {/* Account settings modal */}
+      {accountSettingsOpen && (
+        <AccountSettingsModal
+          currentName={localDisplayName}
+          onClose={() => setAccountSettingsOpen(false)}
+          onSaveName={updateDisplayName}
+          onSavePassword={updatePassword}
+          onDeleteAccount={deleteAccount}
+        />
+      )}
+
       {DialogHost}
     </>
+  );
+}
+
+// =========================================================
+//  Account settings modal
+// =========================================================
+function AccountSettingsModal({
+  currentName,
+  onClose,
+  onSaveName,
+  onSavePassword,
+  onDeleteAccount,
+}: {
+  currentName: string;
+  onClose: () => void;
+  onSaveName: (name: string) => Promise<void>;
+  onSavePassword: (password: string) => Promise<void>;
+  onDeleteAccount: () => Promise<void>;
+}) {
+  const [name, setName] = useState(currentName);
+  const [savingName, setSavingName] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleSaveName() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setSavingName(true);
+    await onSaveName(trimmed);
+    setSavingName(false);
+  }
+
+  async function handleSavePassword() {
+    setPasswordError(null);
+    if (password.length < 6) {
+      setPasswordError("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
+    setSavingPassword(true);
+    await onSavePassword(password);
+    setSavingPassword(false);
+    setPassword("");
+    setConfirmPassword("");
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    await onDeleteAccount();
+    setDeleting(false);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-xl bg-white shadow-xl dark:bg-gray-800">
+        <div className="flex items-center justify-between border-b px-5 py-3 dark:border-gray-700">
+          <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <Settings size={18} /> Account settings
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+            aria-label="close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="flex-1 space-y-6 overflow-auto p-5">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Display name
+            </label>
+            <div className="flex gap-2">
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full rounded-md border px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+              />
+              <button
+                onClick={handleSaveName}
+                disabled={savingName || !name.trim()}
+                className="shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {savingName ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Change password
+            </label>
+            <div className="space-y-2">
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="New password"
+                className="w-full rounded-md border px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+              />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm new password"
+                className="w-full rounded-md border px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+              />
+              {passwordError && (
+                <p className="text-sm text-red-600">{passwordError}</p>
+              )}
+              <button
+                onClick={handleSavePassword}
+                disabled={savingPassword || !password || !confirmPassword}
+                className="w-full rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {savingPassword ? "Saving..." : "Update password"}
+              </button>
+            </div>
+          </div>
+
+          <div className="border-t pt-5 dark:border-gray-700">
+            <label className="mb-1 block text-sm font-medium text-red-600">
+              Danger zone
+            </label>
+            <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+              Permanently delete your account and all notes, notebooks, and
+              Drive backup links. This cannot be undone.
+            </p>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="w-full rounded-md border border-red-600 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60 dark:hover:bg-red-950"
+            >
+              {deleting ? "Deleting..." : "Delete account"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
