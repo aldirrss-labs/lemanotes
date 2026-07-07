@@ -301,10 +301,16 @@ export default function Workspace({
     // sent, so the optimistic update above never touches it — pull the
     // trigger-generated value back so the list's "last updated" badge and
     // sort order reflect reality instead of staying frozen at create time.
+    // Rapid successive edits (e.g. ticking several checklist items quickly)
+    // fire overlapping updateNote calls whose responses can resolve out of
+    // order over the network — only apply this if it's not older than what's
+    // already there, so a slow, stale response can't clobber a newer one.
     if (data) {
       setNotes((prev) =>
         prev.map((n) =>
-          n.id === id ? { ...n, updated_at: data.updated_at } : n
+          n.id === id && data.updated_at > n.updated_at
+            ? { ...n, updated_at: data.updated_at }
+            : n
         )
       );
     }
