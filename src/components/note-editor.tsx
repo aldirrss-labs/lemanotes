@@ -6,14 +6,14 @@ import type { Crepe as CrepeType } from "@milkdown/crepe";
 import type { replaceAll as replaceAllType } from "@milkdown/kit/utils";
 import type { Note } from "@/lib/types";
 import "@milkdown/crepe/theme/common/style.css";
-import "@milkdown/crepe/theme/nord.css";
-import "./milkdown-dark.css";
+import "@milkdown/crepe/theme/frame.css";
+import "./milkdown-overrides.css";
 
 type Props = {
   note: Note;
   // Theme switching is handled globally via the `html.dark` class (see
-  // milkdown-dark.css) rather than this prop; kept for API compatibility
-  // with the caller.
+  // milkdown-overrides.css) rather than this prop; kept for API
+  // compatibility with the caller.
   theme?: "light" | "dark";
   onChange: (noteId: string, patch: Partial<Note>) => void;
 };
@@ -96,6 +96,8 @@ export default function NoteEditor({ note, onChange }: Props) {
         defaultValue: contentRef.current,
         features: {
           [Crepe.Feature.Latex]: false,
+          [Crepe.Feature.Toolbar]: false,
+          [Crepe.Feature.TopBar]: true,
         },
       });
       crepe.on((listener) => {

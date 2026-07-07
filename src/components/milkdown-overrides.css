@@ -1,29 +1,61 @@
-/* Dark palette override for the Milkdown Nord theme.
-   Values copied from @milkdown/crepe/theme/nord-dark/style.css, scoped to
+/* Match the editor's type and spacing to the rest of the app instead of
+   Crepe's defaults (a serif heading font and 120px side padding meant for a
+   full-page document layout rather than a note-taking pane). */
+.milkdown {
+  --crepe-font-title: inherit;
+  --crepe-font-default: inherit;
+}
+.milkdown .ProseMirror {
+  padding: 32px 40px;
+}
+@media (max-width: 640px) {
+  .milkdown .ProseMirror {
+    padding: 20px;
+  }
+}
+
+/* Dark palette override for the Milkdown Frame theme.
+   Values copied from @milkdown/crepe/theme/frame-dark/style.css, scoped to
    html.dark since Crepe's own light/dark stylesheets both target `.milkdown`
    with no distinguishing selector and can't be toggled by importing both. */
 html.dark .milkdown {
-  --crepe-color-background: #1b1c1d;
-  --crepe-color-on-background: #f8f9ff;
-  --crepe-color-surface: #111418;
-  --crepe-color-surface-low: #191c20;
-  --crepe-color-on-surface: #e1e2e8;
-  --crepe-color-on-surface-variant: #c3c6cf;
-  --crepe-color-outline: #8d9199;
-  --crepe-color-primary: #a1c9fd;
-  --crepe-color-secondary: #3c4858;
-  --crepe-color-on-secondary: #d7e3f8;
-  --crepe-color-inverse: #e1e2e8;
-  --crepe-color-on-inverse: #2e3135;
-  --crepe-color-inline-code: #ffb4ab;
-  --crepe-color-error: #ffb4ab;
-  --crepe-color-hover: #1d2024;
-  --crepe-color-selected: #32353a;
-  --crepe-color-inline-area: #111418;
+  --crepe-color-background: #1a1a1a;
+  --crepe-color-on-background: #e6e6e6;
+  --crepe-color-surface: #121212;
+  --crepe-color-surface-low: #1c1c1c;
+  --crepe-color-on-surface: #d1d1d1;
+  --crepe-color-on-surface-variant: #a9a9a9;
+  --crepe-color-outline: #757575;
+  --crepe-color-primary: #b5b5b5;
+  --crepe-color-secondary: #4d4d4d;
+  --crepe-color-on-secondary: #d6d6d6;
+  --crepe-color-inverse: #e5e5e5;
+  --crepe-color-on-inverse: #2a2a2a;
+  --crepe-color-inline-code: #ff6666;
+  --crepe-color-error: #ff6666;
+  --crepe-color-hover: #232323;
+  --crepe-color-selected: #2f2f2f;
+  --crepe-color-inline-area: #2b2b2b;
   --crepe-shadow-1:
     0px 1px 2px 0px rgba(255, 255, 255, 0.3),
     0px 1px 3px 1px rgba(255, 255, 255, 0.15);
   --crepe-shadow-2:
     0px 1px 2px 0px rgba(255, 255, 255, 0.3),
     0px 2px 6px 2px rgba(255, 255, 255, 0.15);
+}
+
+/* Visual polish: softer selection highlight, smoother hover transitions on
+   block handles/slash menu, and slightly rounder corners on code blocks and
+   tables so they feel less boxy than the library defaults. */
+.milkdown .ProseMirror *::selection {
+  background: color-mix(in srgb, var(--crepe-color-primary) 30%, transparent);
+}
+.milkdown .milkdown-block-handle .operation-item,
+.milkdown .milkdown-slash-menu .tab-group ul li,
+.milkdown .milkdown-slash-menu .menu-groups .menu-group li {
+  transition: background-color 120ms ease;
+}
+.milkdown .milkdown-code-block,
+.milkdown .cm-editor {
+  border-radius: 8px;
 }
