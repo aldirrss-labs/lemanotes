@@ -27,6 +27,7 @@ import {
   PinOff,
   ArrowUpDown,
   Settings,
+  CloudDownload,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { Note, Notebook, NotebookNode, SyncLog } from "@/lib/types";
@@ -111,6 +112,7 @@ export default function Workspace({
   );
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const syncingRef = useRef(false);
 
   // New features
@@ -289,7 +291,23 @@ export default function Workspace({
 
   async function updateNote(id: string, patch: Partial<Note>) {
     setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, ...patch } : n)));
-    await supabase.from("notes").update(patch).eq("id", id);
+    const { data } = await supabase
+      .from("notes")
+      .update(patch)
+      .eq("id", id)
+      .select("updated_at")
+      .single();
+    // The `updated_at` column is bumped by a DB trigger, not by the patch we
+    // sent, so the optimistic update above never touches it — pull the
+    // trigger-generated value back so the list's "last updated" badge and
+    // sort order reflect reality instead of staying frozen at create time.
+    if (data) {
+      setNotes((prev) =>
+        prev.map((n) =>
+          n.id === id ? { ...n, updated_at: data.updated_at } : n
+        )
+      );
+    }
   }
 
   async function togglePin(id: string) {
@@ -495,6 +513,52 @@ export default function Workspace({
 
   async function syncNow() {
     await runSync({ showResult: true });
+  }
+
+  async function restoreFromDrive() {
+    const ok = await askConfirm({
+      title: "Restore from Google Drive",
+      message:
+        "Pull any notes and notebooks that exist in the LemaNotes Drive folder but aren't in this account yet? Existing notes are never overwritten.",
+      confirmLabel: "Restore",
+    });
+    if (!ok) return;
+    setRestoring(true);
+    try {
+      const res = await fetch("/api/gdrive/restore", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) {
+        await showAlert({
+          title: "Restore failed",
+          message: json.message ?? "Could not restore from Google Drive.",
+        });
+        return;
+      }
+      await showAlert({ title: "Restore", message: json.message ?? "Done" });
+      if (json.restoredNotebooks > 0 || json.restoredNotes > 0) {
+        const [{ data: nb }, { data: nt }] = await Promise.all([
+          supabase
+            .from("notebooks")
+            .select("*")
+            .order("sort_order", { ascending: true })
+            .order("created_at", { ascending: true }),
+          supabase
+            .from("notes")
+            .select("*")
+            .is("deleted_at", null)
+            .order("updated_at", { ascending: false }),
+        ]);
+        setNotebooks((nb ?? []) as Notebook[]);
+        setNotes((nt ?? []) as Note[]);
+      }
+    } catch {
+      await showAlert({
+        title: "Restore failed",
+        message: "Could not reach the restore server.",
+      });
+    } finally {
+      setRestoring(false);
+    }
   }
 
   async function logout() {
@@ -1234,9 +1298,11 @@ export default function Workspace({
         <AccountSettingsModal
           currentName={localDisplayName}
           gdriveConnected={localGdriveConnected}
+          restoring={restoring}
           onClose={() => setAccountSettingsOpen(false)}
           onSaveName={updateDisplayName}
           onSavePassword={updatePassword}
+          onRestoreFromDrive={restoreFromDrive}
           onDisconnectGDrive={disconnectGDrive}
           onDeleteAccount={deleteAccount}
         />
@@ -1253,17 +1319,21 @@ export default function Workspace({
 function AccountSettingsModal({
   currentName,
   gdriveConnected,
+  restoring,
   onClose,
   onSaveName,
   onSavePassword,
+  onRestoreFromDrive,
   onDisconnectGDrive,
   onDeleteAccount,
 }: {
   currentName: string;
   gdriveConnected: boolean;
+  restoring: boolean;
   onClose: () => void;
   onSaveName: (name: string) => Promise<void>;
   onSavePassword: (password: string) => Promise<void>;
+  onRestoreFromDrive: () => Promise<void>;
   onDisconnectGDrive: () => Promise<void>;
   onDeleteAccount: () => Promise<void>;
 }) {
@@ -1391,6 +1461,20 @@ function AccountSettingsModal({
               <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Google Drive
               </label>
+              <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                Pull in any notes or notebooks that exist in the LemaNotes
+                Drive folder but aren&apos;t in this account yet — useful after
+                reconnecting a Drive account that was disconnected before.
+                Existing notes are never overwritten.
+              </p>
+              <button
+                onClick={onRestoreFromDrive}
+                disabled={restoring}
+                className="mb-4 flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                <CloudDownload size={14} />
+                {restoring ? "Restoring..." : "Restore from Drive"}
+              </button>
               <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
                 Stop backing up notes to Google Drive. Your notes and the
                 files already in Drive are kept — you can reconnect anytime
