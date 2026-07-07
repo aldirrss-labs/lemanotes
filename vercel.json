@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/refresh-gdrive-tokens",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/sync-all-notes",
+      "schedule": "0 17 * * *"
     }
   ]
 }
