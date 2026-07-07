@@ -156,6 +156,76 @@ export async function uploadMarkdown(
   return json.id as string;
 }
 
+export type DriveEntry = { id: string; name: string; isFolder: boolean };
+
+// List the immediate (non-trashed) children of a folder.
+export async function listFolder(
+  accessToken: string,
+  parentId: string
+): Promise<DriveEntry[]> {
+  const entries: DriveEntry[] = [];
+  let pageToken: string | undefined;
+  do {
+    const q = `'${parentId}' in parents and trashed=false`;
+    const params = new URLSearchParams({
+      q,
+      fields: "nextPageToken, files(id,name,mimeType)",
+      spaces: "drive",
+      pageSize: "1000",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await fetch(`${DRIVE}/files?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(`Failed to list Drive folder: ${JSON.stringify(json)}`);
+    }
+    for (const f of json.files ?? []) {
+      entries.push({
+        id: f.id,
+        name: f.name,
+        isFolder: f.mimeType === FOLDER_MIME,
+      });
+    }
+    pageToken = json.nextPageToken;
+  } while (pageToken);
+  return entries;
+}
+
+// Find a folder by name under a parent without creating it. Returns null if absent.
+export async function findFolder(
+  accessToken: string,
+  name: string,
+  parentId: string | null
+): Promise<string | null> {
+  const parentClause = parentId ? ` and '${parentId}' in parents` : "";
+  const q = `mimeType='${FOLDER_MIME}' and name='${escapeQuery(name)}' and trashed=false${parentClause}`;
+  const res = await fetch(
+    `${DRIVE}/files?q=${encodeURIComponent(q)}&fields=files(id,name)&spaces=drive`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const json = await res.json();
+  if (Array.isArray(json.files) && json.files.length > 0) {
+    return json.files[0].id as string;
+  }
+  return null;
+}
+
+// Download a file's raw text content.
+export async function downloadFile(
+  accessToken: string,
+  fileId: string
+): Promise<string> {
+  const res = await fetch(`${DRIVE}/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to download file ${fileId}: ${res.status} ${await res.text()}`);
+  }
+  return res.text();
+}
+
 // Delete a file or folder from Drive. Deleting a folder also removes everything
 // inside it. A 404 (already gone) is treated as success.
 export async function deleteFile(accessToken: string, fileId: string): Promise<void> {
