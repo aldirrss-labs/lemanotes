@@ -123,6 +123,8 @@ export default function Workspace({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
   const [localDisplayName, setLocalDisplayName] = useState(displayName);
+  const [localGdriveConnected, setLocalGdriveConnected] =
+    useState(gdriveConnected);
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     typeof document !== "undefined" &&
@@ -444,6 +446,27 @@ export default function Workspace({
     window.location.href = "/api/gdrive/connect";
   }
 
+  async function disconnectGDrive() {
+    const ok = await askConfirm({
+      title: "Disconnect Google Drive",
+      message:
+        "Stop syncing to Google Drive? Your notes stay untouched here and in Drive — you can reconnect later to resume syncing.",
+      confirmLabel: "Disconnect",
+      danger: true,
+    });
+    if (!ok) return;
+    const res = await fetch("/api/gdrive/disconnect", { method: "POST" });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      await showAlert({
+        title: "Disconnect failed",
+        message: json.message ?? "Could not disconnect Google Drive.",
+      });
+      return;
+    }
+    setLocalGdriveConnected(false);
+  }
+
   const runSync = useCallback(
     async (opts: { showResult: boolean }) => {
       if (syncingRef.current) return;
@@ -717,15 +740,19 @@ export default function Workspace({
         {collapsed ? (
           <>
             <button
-              onClick={gdriveConnected ? undefined : connectGDrive}
-              title={gdriveConnected ? "Google Drive connected" : "Connect Google Drive"}
+              onClick={localGdriveConnected ? undefined : connectGDrive}
+              title={
+                localGdriveConnected
+                  ? "Google Drive connected"
+                  : "Connect Google Drive"
+              }
               className={`flex w-full items-center justify-center rounded-md py-2 ${
-                gdriveConnected ? "text-green-400" : "hover:bg-sidebar-hover"
+                localGdriveConnected ? "text-green-400" : "hover:bg-sidebar-hover"
               }`}
             >
-              {gdriveConnected ? <Cloud size={16} /> : <CloudOff size={16} />}
+              {localGdriveConnected ? <Cloud size={16} /> : <CloudOff size={16} />}
             </button>
-            {gdriveConnected && (
+            {localGdriveConnected && (
               <button
                 onClick={syncNow}
                 disabled={syncing}
@@ -752,7 +779,7 @@ export default function Workspace({
           </>
         ) : (
           <>
-            {gdriveConnected ? (
+            {localGdriveConnected ? (
               <>
                 <div className="flex items-center gap-2 text-green-400">
                   <Cloud size={15} /> Google Drive connected
@@ -1206,9 +1233,11 @@ export default function Workspace({
       {accountSettingsOpen && (
         <AccountSettingsModal
           currentName={localDisplayName}
+          gdriveConnected={localGdriveConnected}
           onClose={() => setAccountSettingsOpen(false)}
           onSaveName={updateDisplayName}
           onSavePassword={updatePassword}
+          onDisconnectGDrive={disconnectGDrive}
           onDeleteAccount={deleteAccount}
         />
       )}
@@ -1223,15 +1252,19 @@ export default function Workspace({
 // =========================================================
 function AccountSettingsModal({
   currentName,
+  gdriveConnected,
   onClose,
   onSaveName,
   onSavePassword,
+  onDisconnectGDrive,
   onDeleteAccount,
 }: {
   currentName: string;
+  gdriveConnected: boolean;
   onClose: () => void;
   onSaveName: (name: string) => Promise<void>;
   onSavePassword: (password: string) => Promise<void>;
+  onDisconnectGDrive: () => Promise<void>;
   onDeleteAccount: () => Promise<void>;
 }) {
   const [name, setName] = useState(currentName);
@@ -1240,6 +1273,7 @@ function AccountSettingsModal({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   async function handleSaveName() {
@@ -1271,6 +1305,12 @@ function AccountSettingsModal({
     setDeleting(true);
     await onDeleteAccount();
     setDeleting(false);
+  }
+
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    await onDisconnectGDrive();
+    setDisconnecting(false);
   }
 
   return (
@@ -1345,6 +1385,26 @@ function AccountSettingsModal({
               </button>
             </div>
           </div>
+
+          {gdriveConnected && (
+            <div className="border-t pt-5 dark:border-gray-700">
+              <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Google Drive
+              </label>
+              <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                Stop backing up notes to Google Drive. Your notes and the
+                files already in Drive are kept — you can reconnect anytime
+                to resume syncing.
+              </p>
+              <button
+                onClick={handleDisconnect}
+                disabled={disconnecting}
+                className="w-full rounded-md border px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+              >
+                {disconnecting ? "Disconnecting..." : "Disconnect Google Drive"}
+              </button>
+            </div>
+          )}
 
           <div className="border-t pt-5 dark:border-gray-700">
             <label className="mb-1 block text-sm font-medium text-red-600">
