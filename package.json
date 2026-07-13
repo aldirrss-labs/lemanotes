@@ -13,8 +13,11 @@
     "@milkdown/kit": "^7.21.2",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "lucide-react": "^0.469.0",
+    "marked": "^18.0.6",
     "next": "^15.5.20",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

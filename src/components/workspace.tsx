@@ -28,10 +28,12 @@ import {
   ArrowUpDown,
   Settings,
   CloudDownload,
+  FileDown,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { Note, Notebook, NotebookNode, SyncLog } from "@/lib/types";
 import { noteToMarkdown, markdownToNote, safeFileName } from "@/lib/markdown";
+import { exportNoteToPdf } from "@/lib/pdf";
 import NotebookTree from "./notebook-tree";
 import NoteEditor from "./note-editor";
 import { useDialogs } from "./dialogs";
@@ -113,6 +115,7 @@ export default function Workspace({
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const syncingRef = useRef(false);
 
   // New features
@@ -436,6 +439,22 @@ export default function Workspace({
       type: "text/markdown",
     });
     downloadBlob(blob, `${safeFileName(selectedNote.title)}.md`);
+  }
+
+  async function exportCurrentAsPdf(note: Note | null) {
+    if (!note || exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      await exportNoteToPdf(note);
+    } catch (e) {
+      console.error("Failed to export note as PDF", e);
+      await showAlert({
+        title: "PDF export failed",
+        message: "Could not generate the PDF for this note.",
+      });
+    } finally {
+      setExportingPdf(false);
+    }
   }
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1175,6 +1194,13 @@ export default function Workspace({
                 className="flex items-center gap-1 rounded-md border px-2 py-1 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
               >
                 <Download size={14} /> .md
+              </button>
+              <button
+                onClick={() => exportCurrentAsPdf(selectedNote)}
+                disabled={exportingPdf}
+                className="flex items-center gap-1 rounded-md border px-2 py-1 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <FileDown size={14} /> {exportingPdf ? "Generating..." : "PDF"}
               </button>
               <button
                 onClick={() => deleteNote(selectedNote.id)}
